@@ -1,0 +1,49 @@
+# ELEC 475 Lab 2 - exact commands used to produce every result in this submission
+# Run from the project root with the virtual environment active.
+#   Windows PowerShell:  python -m venv .venv ; .\.venv\Scripts\Activate.ps1 ; pip install -r requirements.txt
+#   Linux / WSL / macOS: python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
+# All runs use Adam (lr 1e-3 unless stated), weight decay 1e-4, batch size 128, CrossEntropyLoss,
+# global seeding via utils/seed.py. Each train.py run writes results/<run-name>.json.
+
+# ---- Pre-lab ----
+python -m utils.eda --dataset both            # plots/eda_*.png (6 figures)
+python prelab_verify.py
+python demo_transforms.py
+
+# ---- In-lab (5 epochs, no augmentation) -> plots/loss_lenet.png, plots/loss_lenet_modern.png ----
+python -m models.lenet
+python -m models.lenet_modern
+python train.py --model lenet --dataset cifar10 --epochs 5 --batch-size 128 --no-augment --seed 42 --save-model checkpoints/lenet_baseline.pth --plot-file plots/loss_lenet.png --run-name inlab_lenet__cifar10_5ep__s42
+python train.py --model lenet --dataset cifar10 --epochs 5 --batch-size 1024 --no-augment --seed 42 --plot-file plots/loss_lenet_batch1024.png --run-name inlab_lenet_bs1024__cifar10_5ep__s42
+python train.py --model lenet_modern --dataset cifar10 --epochs 5 --batch-size 128 --no-augment --seed 42 --save-model checkpoints/lenet_modern.pth --plot-file plots/loss_lenet_modern.png --run-name inlab_lenet_modern__cifar10_5ep__s42
+
+# ---- Post-lab Step 1: verify AlexNet-64 (6,611,402 params with BN; 6,608,842 for none/LRN) ----
+python -m models.alexnet
+
+# ---- Post-lab Steps 2-5: full 7-model ladder ----
+# run_experiments.py calls train.py once per model; see LADDER in that file for the exact flags.
+# Rows 1-5 and 7 use --no-augment; row 6 (alexnet_bn_aug) uses the augmentation pipeline.
+# This covers the normalization study (alexnet_none / alexnet_lrn / alexnet_bn), the augmentation
+# study (alexnet_bn vs alexnet_bn_aug), the Zoo baseline and Tiny ImageNet.
+# CIFAR-10: 15 epochs, 3 seeds (Mean +/- Std). Tiny ImageNet: 10 epochs, seed 42.
+python run_experiments.py --dataset cifar10 --seeds 42 123 999 --epochs 15
+python run_experiments.py --dataset tiny_imagenet --seeds 42 --epochs 10
+#   -> results/<model>__<dataset>__s<seed>.json, plots/loss_<model>__<dataset>__s<seed>.png,
+#      checkpoints/<model>__<dataset>__s<seed>.pth
+# Required submission names were copied from the seed-42 CIFAR-10 BatchNorm run:
+#   checkpoints/alexnet_bn__cifar10__s42.pth -> checkpoints/alexnet_bn.pth
+#   plots/loss_alexnet_bn__cifar10__s42.png  -> plots/loss_alexnet_bn.png
+
+# ---- Extended ablation: learning rate and early stopping (AlexNet + BN, no augmentation, seed 42) ----
+python train.py --model alexnet --norm bn --dataset cifar10 --epochs 15 --lr 1e-4 --no-augment --seed 42 --run-name explore_lr1e-4__cifar10_x__s42 --results-dir results/explore
+python train.py --model alexnet --norm bn --dataset cifar10 --epochs 30 --lr 1e-4 --no-augment --seed 42 --early-stopping --patience 5 --run-name explore_lr1e-4__cifar10_x__s42 --results-dir results/explore_early_stop
+python train.py --model alexnet --norm bn --dataset cifar10 --epochs 30 --lr 1e-2 --no-augment --seed 42 --early-stopping --patience 5 --run-name explore_lr1e-2__cifar10_x__s42 --results-dir results/explore_early_stop
+#   -> summarized in results/explore_tables.md
+
+# ---- Complexity benchmark, report tables and ablation figure ----
+python compare_models.py --dataset cifar10 --device cuda
+python aggregate_results.py --latency        # -> results/tables.md (Tables 7.3a, 7.3b, generalization gap)
+python -m utils.visualization --plot-ablation    # -> plots/ablation_summary.png
+
+# ---- Evaluate a saved checkpoint (full classification report) ----
+python evaluate.py --checkpoint checkpoints/alexnet_bn.pth --model alexnet --norm bn --dataset cifar10
